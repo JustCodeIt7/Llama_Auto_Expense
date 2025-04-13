@@ -173,5 +173,6 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 
-# Dev Files
-*-dev
+# files ending in -dev
+*-dev.py
+
