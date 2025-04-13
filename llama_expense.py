@@ -2,29 +2,27 @@
 # TAX EXPENSE CATEGORIZER - TUTORIAL VERSION
 # ============================================================
 # This script categorizes business expenses using LLMs for tax purposes
-# Author: Your Name
-# Date: April 2025
-
 import pandas as pd
 import os
 import json
 from rich import print
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
+from langchain_ollama import ChatOllama
 
 # ============================================================
 # 1. CONFIGURATION SECTION
 # ============================================================
-
 # File paths
 DATA_DIR = "data"
 INPUT_EXCEL_PATH = os.path.join(DATA_DIR, "test_input.csv")
 OUTPUT_CSV_PATH = os.path.join(DATA_DIR, "categorized_expenses.csv")
+PROMPT_FILE_PATH = "prompt.md"
 
 # Default values
 DEFAULT_CATEGORY = "Unknown"
 DEFAULT_DEDUCTIBLE = False
-ERROR_CATEGORY = "Error"
+ERROR_CATEGORY = "Error"  # Note: This might not be reachable without try/except
 DEFAULT_JUSTIFICATION = "No justification provided by LLM"
 DATE_FORMAT = "%Y-%m-%d"
 
@@ -35,85 +33,29 @@ OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5")
 # OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.2")
 # OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "gemma3:12b")
 
+
 # ============================================================
-# 2. PROMPT TEMPLATE
+# 2. PROMPT LOADING FUNCTION (Replaces Section 2)
 # ============================================================
+def load_prompt_from_file(file_path):
+    """Loads the prompt text from a specified file."""
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            prompt_text = f.read()
+        print(f"✓ Successfully loaded prompt from {file_path}")
+        return prompt_text
+    except FileNotFoundError:
+        print(f"❌ Error: Prompt file not found at {file_path}")
+        print("Please ensure 'prompt.md' exists in the 'data' directory.")
+        exit(1)  # Exit if prompt file is crucial and not found
+    except Exception as e:
+        print(f"❌ Error reading prompt file {file_path}: {e}")
+        exit(1)
 
-EXPENSE_CATEGORIZATION_PROMPT = """
-You are an expert AI assistant specialized in US tax law concerning business expense deductions for Limited Liability Companies (LLCs).
-Your primary task is to analyze potential business expenses, categorize them accurately, and determine their likely tax deductibility based on IRS guidelines.
-
-**Core Principle:** For an expense to be deductible by a US LLC, it must be both **ordinary** AND **necessary** for carrying on the trade or business.
-* **Ordinary:** Common and accepted in the LLC's specific trade or business.
-* **Necessary:** Helpful and appropriate for the business. It doesn't have to be indispensable.
-
-**Context for Analysis:**
-* The expense details provided are for a US-based LLC.
-* Assume the expense was incurred with a *potential* business purpose, BUT critically evaluate if the item itself suggests a **personal use** component or seems unrelated to common business activities.
-* The expense must be **directly related** to the LLC's business activities. Expenses with a significant personal element are generally non-deductible or require allocation (which is outside this scope - mark as false if predominantly personal).
-* Consider the **reasonableness** of the expense, although precise judgment is difficult without full context. Clearly excessive costs might be questioned by the IRS.
-
-**Expense Details to Analyze:**
-- Product Name: {product_name}
-- Unit Price: {unit_price}
-- Quantity: {quantity}
-- Order Date: {order_date}
-
-**Instructions:**
-
-1.  **Analyze the Product/Service:** Based on the `product_name`, `unit_price`, and `quantity`, assess its likely use within a business context.
-2.  **Categorize:** Assign the expense to *one* of the following standard business categories. If an item could fit multiple, choose the most specific or primary use.
-    * Office Supplies & Software
-    * Computer Hardware & Equipment
-    * Professional Development & Education (Must relate to maintaining/improving skills for the *current* business)
-    * Marketing & Advertising
-    * Travel (Transportation, Lodging - Specify which, must be away from tax home overnight for lodging)
-    * Business Meals (Subject to limitations, often 50% deductible, but mark `true` if a valid business meal occurred)
-    * Utilities (For business property/home office)
-    * Rent & Lease (For business property)
-    * Subscriptions & Dues (Business-related publications, professional organizations)
-    * Cost of Goods Sold (COGS) - Items for resale or direct materials/labor in producing goods/services for sale.
-    * Repairs & Maintenance (For business property/equipment)
-    * Insurance (Business-related policies)
-    * Professional Services (Legal, Accounting, Consulting fees)
-    * Bank Fees & Charges
-    * Business Interest Expense
-    * Taxes & Licenses (Business-related, not federal income tax)
-    * Other Business Expense (Use sparingly for valid business costs not fitting elsewhere)
-    * Potentially Personal / Non-Deductible (Items primarily for personal benefit, entertainment, commuting, certain clothing, political contributions, etc.)
-3.  **Determine Deductibility (`is_deductible`):**
-    * Set to `true` if the expense appears **ordinary and necessary** for the LLC's business based *solely* on the provided details and general business knowledge.
-    * Set to `false` if the expense:
-        * Seems primarily **personal** in nature (e.g., groceries, everyday clothing, personal hobbies, entertainment).
-        * Is explicitly **non-deductible** by IRS rules (e.g., most entertainment expenses, political contributions, fines/penalties).
-        * Is highly **ambiguous**, and a clear business connection isn't apparent from the product name (err on the side of caution).
-        * Relates to starting a business but incurred *before* the business officially started operations (these are often capitalized startup costs, not immediate deductions - mark false for this initial pass).
-4.  **Justify:** Provide a concise explanation for your category choice and deductibility assessment. Reference the "ordinary and necessary" standard and mention any specific considerations (e.g., "Likely deductible as software necessary for operations," or "Potentially personal, clothing not specific workwear, marked non-deductible"). Mention potential limitations like the 50% meal rule if applicable but keep the boolean based on whether it's a *qualifying* business expense at all.
-
-**Output Format:**
-Return your response ONLY as a valid JSON object with the following keys:
-- "category": string (The determined expense category)
-- "is_deductible": boolean (true or false based on the analysis above)
-- "justification": string (Your brief reasoning connecting the item to business deductibility rules)
-**Example Input Expense:**
-Product Name: Business Lunch Meeting with Client XYZ
-Unit Price: 85.50
-Quantity: 1
-Order Date: 2024-03-10
-
-**Example JSON Output:**
-{{
-  "category": "Business Meals",
-  "is_deductible": true,
-  "justification": "Business meal with a client is ordinary and necessary for maintaining business relationships. Note: Typically subject to 50% limitation on deduction amount."
-}}
-"""
 
 # ============================================================
 # 3. UTILITY FUNCTIONS
 # ============================================================
-
-
 def setup_directories():
     """Ensure necessary directories exist."""
     os.makedirs(DATA_DIR, exist_ok=True)
@@ -121,115 +63,66 @@ def setup_directories():
 
 
 def parse_date(date_value):
-    """Parse date value to a consistent format."""
-    try:
-        if isinstance(date_value, pd.Timestamp):
-            return date_value.strftime(DATE_FORMAT)
-        else:
-            return pd.to_datetime(date_value).strftime(DATE_FORMAT)
-    except Exception:
-        return str(date_value)  # Fallback to string if parsing fails
+    """Parse date value to a consistent format. Will raise error on failure."""
+    if isinstance(date_value, pd.Timestamp):
+        return date_value.strftime(DATE_FORMAT)
+    else:
+        # This will raise ValueError or other exceptions if parsing fails
+        return pd.to_datetime(date_value).strftime(DATE_FORMAT)
 
 
-def safe_json_loads(json_string):
-    """Safely parses a JSON string, returning None on failure."""
-    try:
-        # Handle potential markdown code blocks around JSON
-        if isinstance(json_string, str):
-            if json_string.strip().startswith("```json"):
-                json_string = json_string.strip()[7:-3].strip()
-            elif json_string.strip().startswith("```"):
-                json_string = json_string.strip()[3:-3].strip()
-        # If it's already a dict (parsed by JsonOutputParser), return it directly
-        if isinstance(json_string, dict):
-            return json_string
-        return json.loads(json_string)
-    except json.JSONDecodeError:
-        print(f"Warning: Failed to decode JSON: {json_string}")
-        return None
-    except Exception as e:
-        print(f"Warning: An unexpected error occurred during JSON parsing: {e}")
-        return None
+def direct_json_loads(json_string):
+    """Directly parses a JSON string, raising errors on failure."""
+    # Handle potential markdown code blocks around JSON
+    if isinstance(json_string, str):
+        if json_string.strip().startswith("```json"):
+            json_string = json_string.strip()[7:-3].strip()
+        elif json_string.strip().startswith("```"):
+            json_string = json_string.strip()[3:-3].strip()
+    # If it's already a dict (parsed by JsonOutputParser), return it directly
+    if isinstance(json_string, dict):
+        return json_string
+    # This will raise json.JSONDecodeError if parsing fails
+    return json.loads(json_string)
 
 
 # ============================================================
 # 4. DATA HANDLING FUNCTIONS
 # ============================================================
-
-
 def read_expense_data(input_path):
-    """Read expense data from CSV file."""
-    try:
-        df = pd.read_csv(input_path)
-        print(f"✓ Successfully read {len(df)} rows from {input_path}")
-        return df
-    except FileNotFoundError:
-        print(f"❌ Error: Input file not found at {input_path}")
-        return None
-    except Exception as e:
-        print(f"❌ Error reading CSV file: {e}")
-        return None
+    """Read expense data from CSV file. Will raise error on failure."""
+    # This will raise FileNotFoundError or other pandas errors if issues occur
+    df = pd.read_csv(input_path)
+    print(f"✓ Successfully read {len(df)} rows from {input_path}")
+    return df
 
 
 def save_expense_data(df, output_path):
     """Save processed expense data to CSV file."""
-    try:
-        df.to_csv(output_path, index=False)
-        print(f"✓ Processing complete. Results saved to {output_path}")
-        return True
-    except Exception as e:
-        print(f"❌ Error saving CSV file: {e}")
-        return False
+    df.to_csv(output_path, index=False)
+    print(f"✓ Processing complete. Results saved to {output_path}")
+    return True
 
 
 # ============================================================
 # 5. LLM SETUP FUNCTIONS
 # ============================================================
-
-
-def import_llm_module():
-    """Import the appropriate ChatOllama module."""
-    try:
-        from langchain_ollama import ChatOllama
-
-        print("✓ Successfully imported ChatOllama from langchain_ollama.")
-        return ChatOllama
-    except ImportError:
-        try:
-            from langchain_community.chat_models import ChatOllama
-
-            print("✓ Imported ChatOllama from langchain_community.chat_models.")
-            print("Note: Consider updating Langchain packages for latest features.")
-            return ChatOllama
-        except ImportError:
-            print("❌ Error: Could not import ChatOllama.")
-            print(
-                "Please install required packages: pip install pandas openpyxl langchain langchain-community langchain-ollama rich"
-            )
-            exit(1)
-
-
 def initialize_llm(ChatOllama):
     """Initialize the LLM with appropriate settings."""
-    try:
-        llm = ChatOllama(
-            model=OLLAMA_MODEL, base_url=OLLAMA_BASE_URL, format="json", temperature=0.1
-        )
-        print(
-            f"✓ Initialized ChatOllama with model '{OLLAMA_MODEL}' at {OLLAMA_BASE_URL}"
-        )
-        return llm
-    except Exception as e:
-        print(f"❌ Error initializing ChatOllama: {e}")
-        print(
-            f"Please ensure Ollama server is running at {OLLAMA_BASE_URL} and model '{OLLAMA_MODEL}' is available."
-        )
-        exit(1)
+    llm = ChatOllama(
+        model=OLLAMA_MODEL, base_url=OLLAMA_BASE_URL, format="json", temperature=0.1
+    )
+    print(f"✓ Initialized ChatOllama with model '{OLLAMA_MODEL}' at {OLLAMA_BASE_URL}")
+    return llm
 
 
-def create_processing_chain(llm):
+# Modified to accept the prompt text as an argument
+def create_processing_chain(llm, prompt_text):
     """Create the Langchain processing chain with prompt template and JSON output parsing."""
-    prompt_template = ChatPromptTemplate.from_template(EXPENSE_CATEGORIZATION_PROMPT)
+    if not prompt_text:
+        print("❌ Error: Prompt text is empty. Cannot create processing chain.")
+        exit(1)
+    prompt_template = ChatPromptTemplate.from_template(prompt_text)
     chain = prompt_template | llm | JsonOutputParser()
     print("✓ Created LLM processing chain with prompt template and JSON parser")
     return chain
@@ -238,67 +131,75 @@ def create_processing_chain(llm):
 # ============================================================
 # 6. EXPENSE PROCESSING FUNCTIONS
 # ============================================================
-
-
 def process_single_expense(row, processing_chain, index, total_rows):
-    """Process a single expense row using the LLM chain."""
+    """
+    Process a single expense row using the LLM chain.
+    Will raise errors if LLM call or JSON parsing fails.
+    """
     # Extract relevant data for the prompt
     product_name = row.get("Product Name", "N/A")
     unit_price = row.get("Unit Price", 0.0)
     quantity = row.get("Quantity", 1)
-    order_date = parse_date(row.get("Order Date", "N/A"))
+    # parse_date will raise error if format is invalid
+    try:
+        order_date = parse_date(row.get("Order Date", "N/A"))
+    except ValueError as e:
+        print(
+            f"⚠️ Skipping row {index + 1} due to invalid date format: {row.get('Order Date', 'N/A')}. Error: {e}"
+        )
+        return (
+            ERROR_CATEGORY,
+            DEFAULT_DEDUCTIBLE,
+            f"Invalid date format: {row.get('Order Date', 'N/A')}",
+        )
 
     # Skip rows with missing essential data
     if product_name == "N/A":
         print(f"⚠️ Skipping row {index + 1} due to missing 'Product Name'.")
+        # Returning defaults here as skipping isn't an error condition
         return DEFAULT_CATEGORY, DEFAULT_DEDUCTIBLE, "Missing product information"
 
-    try:
-        # Process the expense through the LLM chain
-        result_raw = processing_chain.invoke(
-            {
-                "product_name": product_name,
-                "unit_price": unit_price,
-                "quantity": quantity,
-                "order_date": order_date,
-            }
-        )
+    # Process the expense through the LLM chain
+    # This will raise an error if the LLM call fails
+    result_raw = processing_chain.invoke(
+        {
+            "product_name": product_name,
+            "unit_price": unit_price,
+            "quantity": quantity,
+            "order_date": order_date,
+        }
+    )
 
-        # Safely parse the JSON output
-        result = safe_json_loads(result_raw)
-        if result:  # Check if parsing was successful
-            category = result.get("category", DEFAULT_CATEGORY)
-            is_deductible = result.get("is_deductible", DEFAULT_DEDUCTIBLE)
-            justification = result.get("justification", DEFAULT_JUSTIFICATION)
+    # Directly parse the JSON output
+    # This will raise an error if JSON parsing fails
+    result = direct_json_loads(result_raw)
 
-            # Log results
-            print(f"  📦 Product: {product_name}")
-            print(f"  🏷️ Categorized as: {category}")
-            print(f"  💰 Deductible: {is_deductible}")
-            print(f"  📝 Justification: {justification}")
+    # If parsing succeeds (no error raised), extract data
+    category = result.get("category", DEFAULT_CATEGORY)
+    is_deductible = result.get("is_deductible", DEFAULT_DEDUCTIBLE)
+    justification = result.get("justification", DEFAULT_JUSTIFICATION)
 
-            return category, is_deductible, justification
-        else:
-            # Handle JSON parsing failure
-            print(f"  ❌ Error: Failed to parse LLM response for row {index + 1}")
-            return ERROR_CATEGORY, DEFAULT_DEDUCTIBLE, "LLM response parsing error"
-    except Exception as e:
-        print(f"❌ Error processing row {index + 1}: {e}")
-        return ERROR_CATEGORY, DEFAULT_DEDUCTIBLE, f"Processing error: {str(e)}"
+    # Log results
+    print(f"  📦 Product: {product_name}")
+    print(f"  🏷️ Categorized as: {category}")
+    print(f"  💰 Deductible: {is_deductible}")
+    print(f"  📝 Justification: {justification}")
+
+    return category, is_deductible, justification
 
 
 def process_expenses(input_path, output_path, processing_chain):
     """
     Reads expenses from a CSV file, categorizes them using LLM,
     adds justification, and saves the results to a new CSV file.
+    Will halt on the first error encountered during processing.
     """
     print("\n🚀 Starting expense processing...")
     print(f"📂 Reading input CSV file: {input_path}")
 
-    # Read the input data
+    # Read the input data - will raise error if file not found or invalid
     df = read_expense_data(input_path)
-    if df is None:
-        return
+    # No need to check for df is None, as an error would have been raised
 
     # Prepare lists to store results
     categories = []
@@ -306,11 +207,25 @@ def process_expenses(input_path, output_path, processing_chain):
     justifications = []
 
     # Process each expense row
+    # This loop will stop if process_single_expense raises an error
     for index, row in df.iterrows():
         print(f"\n⏳ Processing row {index + 1}/{len(df)}...")
-        category, is_deductible, justification = process_single_expense(
-            row, processing_chain, index, len(df)
-        )
+        try:
+            category, is_deductible, justification = process_single_expense(
+                row, processing_chain, index, len(df)
+            )
+        except Exception as e:
+            # Log the error and provide default error values for this row
+            print(f"❌ Error processing row {index + 1}: {e}")
+            print("   Assigning error values and continuing to the next row.")
+            category = ERROR_CATEGORY
+            is_deductible = DEFAULT_DEDUCTIBLE
+            justification = f"Error during processing: {e}"
+            # Depending on requirements, you might want to re-raise the exception
+            # or exit the script here instead of continuing.
+            # raise e # Uncomment to stop on first error
+            # exit(1) # Uncomment to stop on first error
+
         categories.append(category)
         deductibility.append(is_deductible)
         justifications.append(justification)
@@ -328,8 +243,6 @@ def process_expenses(input_path, output_path, processing_chain):
 # ============================================================
 # 7. MAIN FUNCTION
 # ============================================================
-
-
 def main():
     """Main function to run the expense categorization process."""
     print("\n==== TAX EXPENSE CATEGORIZER ====")
@@ -337,22 +250,22 @@ def main():
     # Step 1: Setup environment
     setup_directories()
 
-    # Step 2: Initialize language model
-    ChatOllama = import_llm_module()
+    # Step 2: Load the prompt from the external file
+    expense_categorization_prompt = load_prompt_from_file(PROMPT_FILE_PATH)
+
+    # Step 3: Initialize language model
     llm = initialize_llm(ChatOllama)
 
-    # Step 3: Create processing chain
-    processing_chain = create_processing_chain(llm)
+    # Step 4: Create processing chain, passing the loaded prompt
+    processing_chain = create_processing_chain(llm, expense_categorization_prompt)
 
-    # Step 4: Process expenses
+    # Step 5: Process expenses - Script will handle errors per row
     process_expenses(INPUT_EXCEL_PATH, OUTPUT_CSV_PATH, processing_chain)
 
-    print("\n✅ Process completed successfully!")
+    print("\n✅ Process completed!")
 
-
-# ============================================================
-# 8. SCRIPT ENTRY POINT
-# ============================================================
 
 if __name__ == "__main__":
+    # If any unhandled exception occurs during main(), the script will terminate
+    # Errors within process_single_expense are now handled inside process_expenses
     main()
