@@ -9,6 +9,9 @@ from rich import print
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_ollama import ChatOllama
+from dotenv import load_dotenv
+
+load_dotenv(".env")
 
 # ============================================================
 # 1. CONFIGURATION SECTION
@@ -22,20 +25,19 @@ PROMPT_FILE_PATH = "prompt.md"
 # Default values
 DEFAULT_CATEGORY = "Unknown"
 DEFAULT_DEDUCTIBLE = False
-ERROR_CATEGORY = "Error"  # Note: This might not be reachable without try/except
+ERROR_CATEGORY = "Error"
 DEFAULT_JUSTIFICATION = "No justification provided by LLM"
 DATE_FORMAT = "%Y-%m-%d"
 
 # LLM Configuration
-OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://eos-parkmour.local:11434")
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5")
-# Alternative models (uncomment to use)
-# OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.2")
+OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+# OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5")
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.2")
 # OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "gemma3:12b")
 
 
 # ============================================================
-# 2. PROMPT LOADING FUNCTION (Replaces Section 2)
+# 2. PROMPT LOADING FUNCTION
 # ============================================================
 def load_prompt_from_file(file_path):
     """Loads the prompt text from a specified file."""
@@ -48,9 +50,6 @@ def load_prompt_from_file(file_path):
         print(f"❌ Error: Prompt file not found at {file_path}")
         print("Please ensure 'prompt.md' exists in the 'data' directory.")
         exit(1)  # Exit if prompt file is crucial and not found
-    except Exception as e:
-        print(f"❌ Error reading prompt file {file_path}: {e}")
-        exit(1)
 
 
 # ============================================================
@@ -109,9 +108,7 @@ def save_expense_data(df, output_path):
 # ============================================================
 def initialize_llm(ChatOllama):
     """Initialize the LLM with appropriate settings."""
-    llm = ChatOllama(
-        model=OLLAMA_MODEL, base_url=OLLAMA_BASE_URL, format="json", temperature=0.1
-    )
+    llm = ChatOllama(model=OLLAMA_MODEL, base_url=OLLAMA_BASE_URL, format="json", temperature=0.1)
     print(f"✓ Initialized ChatOllama with model '{OLLAMA_MODEL}' at {OLLAMA_BASE_URL}")
     return llm
 
@@ -140,18 +137,8 @@ def process_single_expense(row, processing_chain, index, total_rows):
     product_name = row.get("Product Name", "N/A")
     unit_price = row.get("Unit Price", 0.0)
     quantity = row.get("Quantity", 1)
-    # parse_date will raise error if format is invalid
-    try:
-        order_date = parse_date(row.get("Order Date", "N/A"))
-    except ValueError as e:
-        print(
-            f"⚠️ Skipping row {index + 1} due to invalid date format: {row.get('Order Date', 'N/A')}. Error: {e}"
-        )
-        return (
-            ERROR_CATEGORY,
-            DEFAULT_DEDUCTIBLE,
-            f"Invalid date format: {row.get('Order Date', 'N/A')}",
-        )
+
+    order_date = parse_date(row.get("Order Date", "N/A"))
 
     # Skip rows with missing essential data
     if product_name == "N/A":
@@ -159,8 +146,7 @@ def process_single_expense(row, processing_chain, index, total_rows):
         # Returning defaults here as skipping isn't an error condition
         return DEFAULT_CATEGORY, DEFAULT_DEDUCTIBLE, "Missing product information"
 
-    # Process the expense through the LLM chain
-    # This will raise an error if the LLM call fails
+    # Process the expense through the LLM chain - This will raise an error if the LLM call fails
     result_raw = processing_chain.invoke(
         {
             "product_name": product_name,
@@ -171,7 +157,6 @@ def process_single_expense(row, processing_chain, index, total_rows):
     )
 
     # Directly parse the JSON output
-    # This will raise an error if JSON parsing fails
     result = direct_json_loads(result_raw)
 
     # If parsing succeeds (no error raised), extract data
@@ -199,7 +184,6 @@ def process_expenses(input_path, output_path, processing_chain):
 
     # Read the input data - will raise error if file not found or invalid
     df = read_expense_data(input_path)
-    # No need to check for df is None, as an error would have been raised
 
     # Prepare lists to store results
     categories = []
@@ -211,9 +195,7 @@ def process_expenses(input_path, output_path, processing_chain):
     for index, row in df.iterrows():
         print(f"\n⏳ Processing row {index + 1}/{len(df)}...")
         try:
-            category, is_deductible, justification = process_single_expense(
-                row, processing_chain, index, len(df)
-            )
+            category, is_deductible, justification = process_single_expense(row, processing_chain, index, len(df))
         except Exception as e:
             # Log the error and provide default error values for this row
             print(f"❌ Error processing row {index + 1}: {e}")
@@ -221,9 +203,8 @@ def process_expenses(input_path, output_path, processing_chain):
             category = ERROR_CATEGORY
             is_deductible = DEFAULT_DEDUCTIBLE
             justification = f"Error during processing: {e}"
-            # Depending on requirements, you might want to re-raise the exception
-            # or exit the script here instead of continuing.
-            # raise e # Uncomment to stop on first error
+            # Depending on requirements, you might want to re-raise the exception or exit the script here instead of continuing.
+            # raise e  # Uncomment to re-raise the exception
             # exit(1) # Uncomment to stop on first error
 
         categories.append(category)
@@ -266,6 +247,4 @@ def main():
 
 
 if __name__ == "__main__":
-    # If any unhandled exception occurs during main(), the script will terminate
-    # Errors within process_single_expense are now handled inside process_expenses
     main()
