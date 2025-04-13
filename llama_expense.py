@@ -6,10 +6,10 @@ from langchain_core.output_parsers import JsonOutputParser
 from rich import print
 
 # --- Configuration Constants ---
-OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://eos-parkmour.netbird.cloud:11434")
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "gemma3:27b")
+OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://eos-parkmour.local:11434")
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.2")
 DATA_DIR = "data"
-INPUT_EXCEL_PATH = os.path.join(DATA_DIR, "Retail.OrderHistory.1.xlsx")
+INPUT_EXCEL_PATH = os.path.join(DATA_DIR, "test_input.csv")
 OUTPUT_CSV_PATH = os.path.join(DATA_DIR, "categorized_expenses.csv")
 
 # Tax categorization prompt template
@@ -132,7 +132,7 @@ def process_expenses(input_path, output_path, processing_chain):
     print(f"Reading input Excel file: {input_path}")
 
     try:
-        df = pd.read_excel(input_path)
+        df = pd.read_csv(input_path)
         print(f"Successfully read {len(df)} rows from {input_path}")
     except FileNotFoundError:
         print(f"Error: Input file not found at {input_path}")
