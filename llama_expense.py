@@ -8,8 +8,9 @@ from rich import print
 # --- Configuration Constants ---
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://eos-parkmour.local:11434")
 # OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.2")
-# OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5")
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "gemma3:12b")
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5")
+# OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "gemma3:12b")
+# OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "gemma3:12b")
 DATA_DIR = "data"
 INPUT_EXCEL_PATH = os.path.join(DATA_DIR, "test_input.csv")
 OUTPUT_CSV_PATH = os.path.join(DATA_DIR, "categorized_expenses.csv")
